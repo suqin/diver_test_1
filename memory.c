@@ -31,6 +31,8 @@ char *memory_buffer;
 
 
 
+
+
 int memory_init(void) {
 	int resault;
 	resault = register_chrdev(memory_major, "memory", &memory_fops);
