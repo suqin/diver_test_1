@@ -13,41 +13,61 @@ MODULE_LICENSE("Dual BSD/GPL");
 
 
 int memory_open(struct inode *inode, struct file *filp);
+
 int memory_release(struct indoe *inode, struct file *filp) {return 0;}
+
 ssize_t memory_read(struct file *filp, char *buf, size_t count, loff_t *f_pos);
+
 ssize_t memory_write(struct file *filp,char *buf,size_t count, loff_t *f_pos);
+
 void memory_exit(void);
+
 int memory_init(void);
+
 struct file_operations memory_fops = {
 	read: memory_read,
 	write: memory_write,
 	open: memory_open,
 	release: memory_release
 };
+
 module_init(memory_init);
+
 module_exit(memory_exit);
+
 int memory_major = 60;
-char *memory_buffer;
 
-
-
-
-
+struct mem_dev {
+	void *data;
+	int size;
+	int length;
+};
+struct mem_dev *dev;
 int memory_init(void) {
+	
 	int resault;
 	resault = register_chrdev(memory_major, "memory", &memory_fops);
 	if (resault < 0) {
 		printk("cannot obtain major num: %d\n",
 			memory_major);
-		return resault;
+		//return resault;
+		goto fail;
 	}
-	memory_buffer = kmalloc(1, GFP_KERNEL);
-	if (!memory_buffer) {
+	dev=(struct mem_dev *) kmalloc(sizeof(struct mem_dev), GFP_KERNEL);
+	if (!dev) {
 		resault = -ENOMEM;
 		goto fail;
 	}
-	memset(memory_buffer, 0, 1);
+	dev->data= kmalloc(1024, GFP_KERNEL);
+	dev->size= 1024;
+	dev->length= 0;
+	if (!dev->data) {
+		resault = -ENOMEM;
+		goto fail;
+	}
+	memset(dev->data, 0, 1024);
 	printk("<1>memory malloc succeed\n");
+	
 	return 0;
 	fail:
 		memory_exit();
@@ -57,6 +77,7 @@ int memory_init(void) {
 
 
 int memory_open(struct inode *inode, struct file *file) {
+	file->private_data=dev;
 	return 0;
 }
 
@@ -64,29 +85,55 @@ int memory_open(struct inode *inode, struct file *file) {
 
 void memory_exit(void) {
 	unregister_chrdev(memory_major, "memory");
-	if(memory_buffer) {
-		kfree(memory_buffer);
+	if(dev->data) {
+		kfree(dev->data);
+	}
+	if(dev) {
+		kfree(dev);
 	}
 	printk("<1>Removing memory device\n");
 }
 
 
-ssize_t memory_read(struct file *filp, char *buf,
-		    size_t count, loff_t *f_pos) {
-	copy_to_user(buf,memory_buffer,1);
-	if (*f_pos == 0) {
-		*f_pos+=1;
-		return 1;
-	} else {
-		return 0;
+ssize_t memory_read(struct file *filp, char *buf, size_t count, loff_t *f_pos) {
+	struct mem_dev *dev;
+	ssize_t ret=0;
+	dev=filp->private_data;
+	if(dev->length<*f_pos) {
+		return -EFAULT;
 	}
+	if((dev->length-*f_pos)<count ){
+		count=dev->length-*f_pos;
+	}
+	if(copy_to_user(buf,dev->data+*f_pos,count)) {
+		ret=-EFAULT;
+		goto out;
+	}
+	*f_pos+=count;
+	ret=count;
+	out:
+		return ret;
+	
 }
 
 
-ssize_t memory_write(struct file *filp, char *buf,
-		     size_t count, loff_t *fpos) {
-	char *temp;
-	temp = buf+count-1;
-	copy_from_user(memory_buffer,temp,1);
-	return 1;
+ssize_t memory_write(struct file *filp, char *buf, size_t count, loff_t *fpos) {
+	ssize_t ret=0;
+	struct mem_dev *dev;
+	dev=filp->private_data;
+	if(count>dev->size){
+		count = dev->size;
+	}
+	memset(dev->data,0,dev->size);
+	dev->length=0;
+	if(copy_from_user(dev->data,buf,count)) {
+		ret = -EFAULT;
+		goto out;
+	}
+	dev->length+=count;
+	*fpos+=count;
+	ret=count;
+	out:
+		return ret;
 }
+
