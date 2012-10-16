@@ -9,6 +9,8 @@
 #include <linux/fcntl.h>  /*O_ACCMODE*/
 #include <asm/system.h>   /* cli(),*_flag*/
 #include <asm/uaccess.h>  /*copy_from...()*/
+#include <linux/semaphore.h> /*linux 2.6.32*/
+//#include <asm/semaphore.h>   /*linux 2.6.32以下版本*/
 MODULE_LICENSE("Dual BSD/GPL");
 
 
@@ -38,9 +40,10 @@ module_exit(memory_exit);
 int memory_major = 60;
 
 struct mem_dev {
-	void *data;
-	int size;
-	int length;
+	void *data;              //数据区指针
+	int size;               //数据最大长度
+	int length;            //当前数据长度
+	struct semaphore sem; //互斥旗标
 };
 struct mem_dev *dev;
 int memory_init(void) {
@@ -50,7 +53,6 @@ int memory_init(void) {
 	if (resault < 0) {
 		printk("cannot obtain major num: %d\n",
 			memory_major);
-		//return resault;
 		goto fail;
 	}
 	dev=(struct mem_dev *) kmalloc(sizeof(struct mem_dev), GFP_KERNEL);
@@ -61,6 +63,8 @@ int memory_init(void) {
 	dev->data= kmalloc(1024, GFP_KERNEL);
 	dev->size= 1024;
 	dev->length= 0;
+	init_MUTEX(&(dev->sem));
+	//init_MUTEX_LOCKED(&(dev->sem));
 	if (!dev->data) {
 		resault = -ENOMEM;
 		goto fail;
@@ -99,6 +103,9 @@ ssize_t memory_read(struct file *filp, char *buf, size_t count, loff_t *f_pos) {
 	struct mem_dev *dev;
 	ssize_t ret=0;
 	dev=filp->private_data;
+	if( down_interruptible(&dev->sem))
+		return -ERESTARTSYS;
+	
 	if(dev->length<*f_pos) {
 		return -EFAULT;
 	}
@@ -109,9 +116,15 @@ ssize_t memory_read(struct file *filp, char *buf, size_t count, loff_t *f_pos) {
 		ret=-EFAULT;
 		goto out;
 	}
+
+	if(copy_to_user(buf,dev->data+*f_pos,count)) {
+		ret=-EFAULT;
+		goto out;
+	}
 	*f_pos+=count;
 	ret=count;
 	out:
+		up(&dev->sem);
 		return ret;
 	
 }
@@ -121,6 +134,8 @@ ssize_t memory_write(struct file *filp, char *buf, size_t count, loff_t *fpos) {
 	ssize_t ret=0;
 	struct mem_dev *dev;
 	dev=filp->private_data;
+	if(down_interruptible(&dev->sem))
+		return -ERESTARTSYS;
 	if(count>dev->size){
 		count = dev->size;
 	}
@@ -134,6 +149,7 @@ ssize_t memory_write(struct file *filp, char *buf, size_t count, loff_t *fpos) {
 	*fpos+=count;
 	ret=count;
 	out:
+		up(&dev->sem);
 		return ret;
 }
 
