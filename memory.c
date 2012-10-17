@@ -11,8 +11,9 @@
 #include <asm/uaccess.h>  /*copy_from...()*/
 #include <linux/semaphore.h> /*linux 2.6.32*/
 //#include <asm/semaphore.h>   /*linux 2.6.32以下版本*/
+#include <linux/fcntl.h>  /*O_ACCMODE*/>
+#include "ioct.h"
 MODULE_LICENSE("Dual BSD/GPL");
-
 
 int memory_open(struct inode *inode, struct file *filp);
 
@@ -22,6 +23,8 @@ ssize_t memory_read(struct file *filp, char *buf, size_t count, loff_t *f_pos);
 
 ssize_t memory_write(struct file *filp,char *buf,size_t count, loff_t *f_pos);
 
+int memory_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned long arg);
+
 void memory_exit(void);
 
 int memory_init(void);
@@ -30,7 +33,8 @@ struct file_operations memory_fops = {
 	read: memory_read,
 	write: memory_write,
 	open: memory_open,
-	release: memory_release
+	release: memory_release,
+	ioctl: memory_ioctl
 };
 
 module_init(memory_init);
@@ -150,6 +154,59 @@ ssize_t memory_write(struct file *filp, char *buf, size_t count, loff_t *fpos) {
 	ret=count;
 	out:
 		up(&dev->sem);
+		return ret;
+}
+
+int memory_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned long arg)
+{
+	int err=0;
+	int ret=0;
+	struct mem_dev *dev;
+	
+	struct msg *m;
+	dev=filp->private_data;
+	m=(struct msg *) arg;
+	int count=m->size;
+	/*if( down_interruptible(&dev->sem))
+	*	return -ERESTARTSYS;
+	*/
+	if(_IOC_TYPE(cmd) !=MEMORY_IOC_MAGIC)
+		return -ENOTTY;                  //魔数非法
+	if(_IOC_NR(cmd) > MEM_MAX)
+		return -ENOTTY;                  //没有对应的命令
+	if(_IOC_DIR(cmd) & _IOC_READ)
+		err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
+	else if(_IOC_DIR(cmd) & _IOC_READ)
+		err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
+	if (err)
+		return -EFAULT;
+	
+	if( down_interruptible(&dev->sem))
+		return -ERESTARTSYS;
+	
+	switch (cmd)
+	{
+		case MEM_CLEAR :
+			memset( dev->data,0,dev->size);
+			dev->length=0;
+			break;
+		case MEM_SET_STR :
+			if(count>dev->size){
+				count = dev->size;
+			}
+			memset(dev->data,0,dev->size);
+			dev->length=0;
+			if(copy_from_user(dev->data,(char *)m->data,count)) {
+				ret = -EFAULT;
+				goto out;
+			}
+			dev->length=m->size;
+			printk("<1>__get_user%s",(char *)m->data);
+			
+			break;
+	}
+	out:
+		up(&(dev->sem));
 		return ret;
 }
 
