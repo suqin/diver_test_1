@@ -59,15 +59,15 @@ int memory_init(void) {
 			memory_major);
 		goto fail;
 	}
-	dev=(struct mem_dev *) kmalloc(sizeof(struct mem_dev), GFP_KERNEL);
+	dev=(struct mem_dev *) kmalloc(sizeof(struct mem_dev), GFP_KERNEL); //实例化dev结构
 	if (!dev) {
 		resault = -ENOMEM;
 		goto fail;
 	}
-	dev->data= kmalloc(1024, GFP_KERNEL);
+	dev->data= kmalloc(1024, GFP_KERNEL);        //分配内存
 	dev->size= 1024;
 	dev->length= 0;
-	init_MUTEX(&(dev->sem));
+	init_MUTEX(&(dev->sem));                     //初始化旗表
 	//init_MUTEX_LOCKED(&(dev->sem));
 	if (!dev->data) {
 		resault = -ENOMEM;
@@ -107,7 +107,7 @@ ssize_t memory_read(struct file *filp, char *buf, size_t count, loff_t *f_pos) {
 	struct mem_dev *dev;
 	ssize_t ret=0;
 	dev=filp->private_data;
-	if( down_interruptible(&dev->sem))
+	if( down_interruptible(&dev->sem))            //上锁
 		return -ERESTARTSYS;
 	
 	if(dev->length<*f_pos) {
