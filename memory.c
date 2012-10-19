@@ -174,7 +174,7 @@ int memory_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsig
 		return -ENOTTY;                  //魔数非法
 	if(_IOC_NR(cmd) > MEM_MAX)
 		return -ENOTTY;                  //没有对应的命令
-	if(_IOC_DIR(cmd) & _IOC_READ)
+	if(_IOC_DIR(cmd) & _IOC_READ)        //地址合法性判断
 		err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
 	else if(_IOC_DIR(cmd) & _IOC_READ)
 		err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
